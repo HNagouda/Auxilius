@@ -43,11 +43,11 @@
   .katex-display { margin: 0.6em 0; overflow-x: auto; overflow-y: hidden; }
   /* Markdown's line breaks would add a blank line between equations that sit one under the other. */
   .katex-display + br { display: none; }
-  .diagram { display: flex; flex-direction: column; align-items: center; overflow-x: auto; margin: 0 0 1em; }
-  .diagram details, .circuit details { align-self: stretch; }
+  /* Wide diagrams scroll sideways at full size rather than shrinking until the labels are unreadable. */
+  .diagram { overflow-x: auto; margin: 0 0 1em; }
   .sketch { margin: 0 0 1em; }
   .sketch img { display: block; max-width: 100%; max-height: 320px; border-radius: 6px; }
-  .diagram svg { max-width: 100%; height: auto; }
+  .diagram svg { display: block; margin: 0 auto; max-width: none; height: auto; }
   .circuit { margin: 0 0 1em; }
   .schematic { display: block; margin: 0 auto; max-width: 100%; height: auto; }
   .schematic line, .schematic path, .schematic circle { stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }

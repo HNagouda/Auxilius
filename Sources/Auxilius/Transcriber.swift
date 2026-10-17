@@ -1,6 +1,7 @@
 import Foundation
 
-/// Reads a photo of a handwritten page with Claude and returns it as Markdown with LaTeX, circuit JSON and Mermaid.
+/// Reads a photo of a handwritten page with Claude and returns it as Markdown with LaTeX, circuit JSON,
+/// Mermaid, and sketch blocks that point at where each drawing sits in the photo.
 enum Transcriber {
     // Reading a page needs little deliberation, and every second counts while someone waits.
     private static let effort = "low"
@@ -38,9 +39,7 @@ enum Transcriber {
         - Every corner and junction is a grid point where parts meet, so wires must meet the parts they \
         connect to at exactly the same point.
         - "nodes" names labelled points, for example {"at": [4, 0], "text": "A"}. "title" is a few words.
-        - "box" is where the sketch sits in the photo, as [left, top, right, bottom] fractions of the \
-        image width and height, with a little margin.
-        - Example: {"title": "Series RC", "box": [0.1, 0.05, 0.5, 0.25], "parts": [
+        - Example: {"title": "Series RC", "parts": [
           {"type": "battery", "name": "V1", "value": "2 V", "from": [0, 2], "to": [0, 0]},
           {"type": "resistor", "name": "R1", "value": "2 kΩ", "from": [0, 0], "to": [3, 0]},
           {"type": "capacitor", "name": "C1", "value": "100 µF", "note": "V_C = 5 V", "from": [3, 0], "to": [3, 2]},
@@ -49,9 +48,26 @@ enum Transcriber {
         [Series RC loop: 2 V source, 2 kΩ resistor, 100 µF capacitor with V_C = 5 V].
 
         Other diagrams:
-        - Flowcharts, trees and state machines go in a fenced ```mermaid block using `flowchart LR`. \
-        Mermaid labels are plain text: no LaTeX, and every label in double quotes.
-        - Graphs, plots and sketches get only a square-bracket line with the axes, labelled points and values.
+        - Any other diagram made of nodes joined by lines or arrows goes in a fenced ```mermaid block: \
+        flowcharts, trees, state machines, automata, networks, ER diagrams, and graphs such as resource \
+        allocation graphs. Use `flowchart TB` or `flowchart LR`, whichever matches the sketch.
+        - Match the drawn shapes: a circle or oval is a rounded box ("P1"), a box is ["R1"], a diamond is \
+        {"x > 0"}. Do not use (( )) circles. Put \
+        what is drawn inside a shape in its label, for example ["R1 (2 instances)"] for a box with two dots.
+        - Keep every arrow and its direction, labelled edges as -->|"A"|, plain lines as ---, and dashed \
+        lines as -.-> or -.->|"label"|. If an arrow's direction is unclear, draw your best reading and say \
+        so in the square-bracket line.
+        - Mermaid labels are plain text: no LaTeX, and every label in double quotes.
+        - Under each diagram, add one line in square brackets saying what it shows.
+
+        Original sketches:
+        - Directly after every diagram (circuit or Mermaid), before its square-bracket line, add a fenced \
+        ```sketch block holding one JSON object, \
+        {"box": [left, top, right, bottom]}, giving where the drawing sits in the photo as fractions of the \
+        image width and height, with a little margin. The app shows that crop of the photo, so the student \
+        can check your diagram against what they drew.
+        - Plots, graphs with axes and free sketches that are neither circuits nor node-and-line diagrams \
+        get only a ```sketch block and a square-bracket line with the axes, labelled points and values.
 
         Accuracy:
         - Leave out anything crossed out. Write [illegible] for anything you cannot read.

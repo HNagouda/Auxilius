@@ -43,7 +43,10 @@
   .katex-display { margin: 0.6em 0; overflow-x: auto; overflow-y: hidden; }
   /* Markdown's line breaks would add a blank line between equations that sit one under the other. */
   .katex-display + br { display: none; }
-  .diagram { display: flex; justify-content: center; overflow-x: auto; }
+  .diagram { display: flex; flex-direction: column; align-items: center; overflow-x: auto; margin: 0 0 1em; }
+  .diagram details, .circuit details { align-self: stretch; }
+  .sketch { margin: 0 0 1em; }
+  .sketch img { display: block; max-width: 100%; max-height: 320px; border-radius: 6px; }
   .diagram svg { max-width: 100%; height: auto; }
   .circuit { margin: 0 0 1em; }
   .schematic { display: block; margin: 0 auto; max-width: 100%; height: auto; }
@@ -95,7 +98,12 @@
       theme: darkMode.matches ? "dark" : "neutral",
       fontFamily: "-apple-system, system-ui, sans-serif",
       // Natural size: stretched to the pane, a three-node circuit grows boxes a hand wide.
-      flowchart: { useMaxWidth: false },
+      // SVG text labels: WebKit mis-measures Mermaid's HTML labels and draws circles several times too big.
+      flowchart: { useMaxWidth: false, htmlLabels: false },
+      // The classic look, because "neo" pads every node by 32 px. Circles balloon either way (WebKit
+      // reports their labels too tall), which is why the prompt asks for rounded boxes instead.
+      look: "classic",
+      htmlLabels: false,
       // A step below the 15 px body text, so diagrams read as figures rather than headlines.
       themeVariables: { fontSize: "13px" },
     });
@@ -118,13 +126,12 @@
     }
   }
 
-  // Replaces each ```circuit block with its schematic, and the matching crop of the photo underneath.
-  async function renderCircuits(root, pageImage) {
+  // Replaces each ```circuit block with its schematic.
+  function renderCircuits(root) {
     for (const block of root.querySelectorAll("pre > code.language-circuit")) {
-      let circuit, schematic;
+      let schematic;
       try {
-        circuit = JSON.parse(block.textContent);
-        schematic = renderCircuit(circuit);
+        schematic = renderCircuit(JSON.parse(block.textContent));
       } catch (error) {
         console.error("Could not draw a circuit", error);
         continue;
@@ -132,19 +139,54 @@
       const figure = document.createElement("div");
       figure.className = "circuit";
       figure.appendChild(schematic);
-      const crop = pageImage && Array.isArray(circuit.box) ? await cropped(pageImage, circuit.box) : null;
-      if (crop) {
+      block.parentElement.replaceWith(figure);
+    }
+  }
+
+  // Replaces each ```sketch block with that crop of the photo. Under a drawn diagram it folds away as
+  // "Original sketch"; on its own (a plot, a free sketch) the crop is the figure, so it shows directly.
+  async function renderSketches(root, pageImage) {
+    for (const block of root.querySelectorAll("pre > code.language-sketch")) {
+      const container = block.parentElement;
+      let box;
+      try {
+        box = JSON.parse(block.textContent).box;
+      } catch (error) {
+        console.error("Could not read a sketch block", error);
+      }
+      const crop = pageImage && Array.isArray(box) ? await cropped(pageImage, box) : null;
+      if (!crop) {
+        container.remove();
+        continue;
+      }
+
+      const image = document.createElement("img");
+      image.src = crop;
+      image.alt = "The drawing as sketched on the page";
+      const diagram = diagramBefore(container);
+      if (diagram) {
         const details = document.createElement("details");
         const summary = document.createElement("summary");
         summary.textContent = "Original sketch";
-        const image = document.createElement("img");
-        image.src = crop;
-        image.alt = "The sketch as drawn on the page";
         details.append(summary, image);
-        figure.appendChild(details);
+        diagram.appendChild(details);
+        container.remove();
+      } else {
+        const figure = document.createElement("div");
+        figure.className = "sketch";
+        figure.appendChild(image);
+        container.replaceWith(figure);
       }
-      block.parentElement.replaceWith(figure);
     }
+  }
+
+  // The drawn diagram a sketch block belongs to, looking back past its one-line [description].
+  function diagramBefore(element) {
+    let previous = element.previousElementSibling;
+    if (previous && previous.matches("p") && previous.textContent.trim().startsWith("[")) {
+      previous = previous.previousElementSibling;
+    }
+    return previous && previous.matches(".circuit, .diagram") ? previous : null;
   }
 
   // The model's box is approximate, so the crop gets a margin on every side.
@@ -183,8 +225,9 @@
     const html = DOMPurify.sanitize(marked.parse(extractMath(text, formulas), { gfm: true, breaks: true }));
     const staging = document.createElement("div");
     staging.innerHTML = html.replace(/AUXMATH(\d+)X/g, (_, index) => formulas[Number(index)]);
-    await renderCircuits(staging, await loadImage(pageImageSource));
+    renderCircuits(staging);
     await renderDiagrams(staging);
+    await renderSketches(staging, await loadImage(pageImageSource));
 
     // A newer transcript may have arrived while the diagrams were drawing.
     if (current !== generation) return;

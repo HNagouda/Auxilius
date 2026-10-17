@@ -35,17 +35,23 @@ enum Netlist {
     ]
     private static let logger = Logger(subsystem: "auxilius", category: "netlist")
 
-    /// The transcript with every ```circuit block swapped for a netlist block a chat can read.
+    /// The transcript as chats get it: ```circuit blocks become netlists, and ```sketch blocks go,
+    /// since they only point the app at a crop of the photo that the chat gets whole.
     static func chatVersion(of transcript: String) -> String {
         var output = ""
         var remainder = Substring(transcript)
-        while let start = remainder.range(of: "```circuit"), let end = remainder[start.upperBound...].range(of: "```") {
+        while let start = nextBlock(in: remainder), let end = remainder[start.upperBound...].range(of: "```") {
             output += remainder[..<start.lowerBound]
-            let json = remainder[start.upperBound..<end.lowerBound]
-            output += netlistBlock(for: String(json))
+            if remainder[start] == "```circuit" {
+                output += netlistBlock(for: String(remainder[start.upperBound..<end.lowerBound]))
+            }
             remainder = remainder[end.upperBound...]
         }
         return output + remainder
+    }
+
+    private static func nextBlock(in text: Substring) -> Range<Substring.Index>? {
+        [text.range(of: "```circuit"), text.range(of: "```sketch")].compactMap { $0 }.min { $0.lowerBound < $1.lowerBound }
     }
 
     private static func netlistBlock(for json: String) -> String {

@@ -7,8 +7,10 @@ final class SettingsForm {
     var draftKey = ""
     var keyError: String?
     var claudeDesktopResult: String?
+    var codexResult: String?
     var models: [ClaudeModel] = []
     var modelsError: String?
+    var historyError: String?
 }
 
 struct SettingsView: View {
@@ -19,6 +21,7 @@ struct SettingsView: View {
         Form {
             transcriptionSection
             chatSection
+            historySection
         }
         .formStyle(.grouped)
         .frame(width: 560)
@@ -83,6 +86,19 @@ struct SettingsView: View {
             if let claudeDesktopResult = form.claudeDesktopResult {
                 Text(claudeDesktopResult).foregroundStyle(.secondary)
             }
+            LabeledContent("ChatGPT (Codex)") {
+                Button("Connect") {
+                    do {
+                        try ChatConnections.addToCodex()
+                        form.codexResult = "Connected. Restart the ChatGPT app; the tool shows up in Codex."
+                    } catch {
+                        form.codexResult = error.localizedDescription
+                    }
+                }
+            }
+            if let codexResult = form.codexResult {
+                Text(codexResult).foregroundStyle(.secondary)
+            }
             LabeledContent("Claude Code") {
                 Button("Copy Command") {
                     NSPasteboard.general.clearContents()
@@ -100,7 +116,32 @@ struct SettingsView: View {
         } header: {
             Text("Chat")
         } footer: {
-            Text("Connected chats get a read_paper tool that shows them your page and its transcript. Any other chat: copy the transcript with ⇧⌘C and paste it.")
+            Text("Connected chats get a read_paper tool that shows them your page and its transcript. ChatGPT's normal chat mode cannot launch local tools yet, so there, use Copy (⇧⌘C) and paste.")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var historySection: some View {
+        Section {
+            Toggle("Keep every page", isOn: Binding(get: { session.keepsHistory }, set: session.setKeepsHistory))
+            LabeledContent("Saved pages") {
+                Button("Show in Finder") {
+                    do {
+                        try FileManager.default.createDirectory(at: PageHistory.directory, withIntermediateDirectories: true)
+                        NSWorkspace.shared.activateFileViewerSelecting([PageHistory.directory])
+                        form.historyError = nil
+                    } catch {
+                        form.historyError = error.localizedDescription
+                    }
+                }
+            }
+            if let historyError = form.historyError {
+                Text(historyError).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("History")
+        } footer: {
+            Text("Saves each page the camera reads, with its transcript, to build a test set for comparing models. Only pages where a sheet was found are kept, up to the latest 1,000.")
                 .foregroundStyle(.secondary)
         }
     }

@@ -19,6 +19,7 @@ final class Session {
     private static let selectedCameraKey = "selectedCameraID"
     private static let modelKey = "transcriptionModel"
     private static let copiedConfirmation = Duration.seconds(1.5)
+    private static let keepsHistoryKey = "keepsPageHistory"
     private static let logger = Logger(subsystem: "auxilius", category: "session")
 
     private(set) var cameras: [AVCaptureDevice] = []
@@ -38,10 +39,14 @@ final class Session {
     // Read from the keychain once per launch: an ad-hoc signed rebuild can make every read ask for permission.
     private(set) var apiKey = Keychain.apiKey()
     private(set) var model = Session.savedModel()
+    // Off by default: it keeps every camera photo of the page on disk.
+    private(set) var keepsHistory = UserDefaults.standard.bool(forKey: keepsHistoryKey)
 
     private var camera: Camera!
     private var pageJPEG: Data?
     private var pageNumber = 0
+    // The current page's name in the page history, when the history is on.
+    private var historyName: String?
     private var transcribedPageNumber = 0
 
     init() {
@@ -142,19 +147,45 @@ final class Session {
             preview = image
         case .writing(let writing):
             isWriting = writing
-        case .newPage(let image, let jpeg):
+        case .newPage(let image, let jpeg, let foundPage):
+            let capturedAt = Date()
             page = image
             pageJPEG = jpeg
-            pageCapturedAt = Date()
+            pageCapturedAt = capturedAt
             pageNumber += 1
             do {
                 try Feed.write(jpeg: jpeg)
             } catch {
                 Self.logger.error("Could not save the page for chat: \(error.localizedDescription)")
             }
+            // Frames without a detected sheet are usually the desk or a sleeve, not worth keeping.
+            historyName = keepsHistory && foundPage ? saveToHistory(jpeg, capturedAt: capturedAt) : nil
             writeRecord()
             transcribeLatestPage()
         }
+    }
+
+    private func saveToHistory(_ jpeg: Data, capturedAt: Date) -> String? {
+        do {
+            return try PageHistory.save(jpeg: jpeg, capturedAt: capturedAt)
+        } catch {
+            Self.logger.error("Could not add the page to the history: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    // A failure here only costs the history its transcript, so it must not stop transcription.
+    private func saveTranscriptToHistory(forPageNamed name: String) {
+        do {
+            try PageHistory.saveTranscript(transcript, model: model.id, forPageNamed: name)
+        } catch {
+            Self.logger.error("Could not add the transcript to the history: \(error.localizedDescription)")
+        }
+    }
+
+    func setKeepsHistory(_ keeps: Bool) {
+        keepsHistory = keeps
+        UserDefaults.standard.set(keeps, forKey: Self.keepsHistoryKey)
     }
 
     private func writeRecord() {
@@ -181,11 +212,15 @@ final class Session {
         Task {
             while transcribedPageNumber < pageNumber, let jpeg = pageJPEG {
                 let number = pageNumber
+                let pageHistoryName = historyName
                 do {
                     transcript = try await Transcriber.transcribe(jpeg: jpeg, previous: transcript, model: model, apiKey: apiKey)
                     transcribedPageJPEG = jpeg
                     transcribedPageNumber = number
                     writeRecord()
+                    if let pageHistoryName {
+                        saveTranscriptToHistory(forPageNamed: pageHistoryName)
+                    }
                 } catch {
                     Self.logger.error("Transcription failed: \(error.localizedDescription)")
                     transcriptionError = error.localizedDescription

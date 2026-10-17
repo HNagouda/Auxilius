@@ -5,7 +5,8 @@ import UniformTypeIdentifiers
 enum FrameEvent {
     case preview(CGImage)
     case writing(Bool)
-    case newPage(CGImage, jpeg: Data)
+    // `foundPage` is false when no sheet was detected and the whole frame was used instead.
+    case newPage(CGImage, jpeg: Data, foundPage: Bool)
 }
 
 /// Turns camera frames into a live page preview and a new page each time the writing settles.
@@ -59,7 +60,7 @@ final class FrameProcessor {
         }
         guard isNewPage, let image = render(page, longestSide: Self.pageSide), let jpeg = jpegData(image) else { return }
 
-        onEvent(.newPage(image, jpeg: jpeg))
+        onEvent(.newPage(image, jpeg: jpeg, foundPage: tracker.quad != nil))
     }
 
     private func render(_ image: CIImage, longestSide: CGFloat) -> CGImage? {

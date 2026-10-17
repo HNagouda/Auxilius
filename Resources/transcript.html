@@ -1,0 +1,126 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="vendor/katex/katex.min.css">
+<script src="vendor/katex/katex.min.js"></script>
+<script src="vendor/marked/marked.umd.js"></script>
+<script src="vendor/dompurify/purify.min.js"></script>
+<script src="vendor/mermaid/mermaid.min.js"></script>
+<style>
+  :root {
+    color-scheme: light dark;
+    --hairline: rgba(128, 128, 128, 0.22);
+    --wash: rgba(128, 128, 128, 0.07);
+  }
+  html, body { margin: 0; background: transparent; }
+  body {
+    font: 15px/1.65 -apple-system, system-ui, sans-serif;
+    color: -apple-system-label;
+    -webkit-font-smoothing: antialiased;
+    padding: 28px 36px 40px;
+    max-width: 760px;
+  }
+  #page > :first-child { margin-top: 0; }
+  p, ul, ol, table, blockquote, pre, .diagram { margin: 0 0 1em; }
+  h1, h2, h3, h4 { font-weight: 600; line-height: 1.3; margin: 1.6em 0 0.6em; }
+  h1 { font-size: 19px; }
+  h2 { font-size: 17px; }
+  h3, h4 { font-size: 15px; }
+  ul, ol { padding-left: 1.4em; }
+  li { margin: 0.2em 0; }
+  em { color: -apple-system-secondary-label; }
+  hr { border: 0; border-top: 1px solid var(--hairline); margin: 1.6em 0; }
+  blockquote { margin-left: 0; padding-left: 14px; border-left: 2px solid var(--hairline); color: -apple-system-secondary-label; }
+  table { border-collapse: collapse; }
+  th, td { border: 1px solid var(--hairline); padding: 4px 10px; text-align: left; }
+  th { font-weight: 600; background: var(--wash); }
+  code { font: 13px/1.5 ui-monospace, "SF Mono", monospace; background: var(--wash); border-radius: 4px; padding: 1px 4px; }
+  pre { background: var(--wash); border-radius: 6px; padding: 10px 12px; overflow-x: auto; }
+  pre code { background: none; padding: 0; }
+  .katex { font-size: 1.08em; }
+  .katex-display { margin: 0.6em 0; overflow-x: auto; overflow-y: hidden; }
+  /* Markdown's line breaks would add a blank line between equations that sit one under the other. */
+  .katex-display + br { display: none; }
+  .diagram { display: flex; justify-content: center; overflow-x: auto; }
+  .diagram svg { max-width: 100%; height: auto; }
+  ::selection { background: -apple-system-selected-text-background; }
+</style>
+</head>
+<body>
+<main id="page"></main>
+<script>
+  // Math is cut out before Markdown runs, because Markdown would turn the _ and * inside LaTeX into emphasis.
+  // Each formula leaves a plain-letter placeholder that Markdown and DOMPurify pass through untouched.
+  const mathPatterns = [
+    { pattern: /\$\$([\s\S]+?)\$\$/g, display: true },
+    { pattern: /\\\[([\s\S]+?)\\\]/g, display: true },
+    { pattern: /\\\(([\s\S]+?)\\\)/g, display: false },
+    { pattern: /\$([^$\n]+?)\$/g, display: false },
+  ];
+  const darkMode = window.matchMedia("(prefers-color-scheme: dark)");
+  let latestText = "";
+  let generation = 0;
+
+  function extractMath(text, formulas) {
+    // Fenced code blocks (Mermaid included) keep their dollar signs.
+    return text.split(/(```[\s\S]*?```)/g).map((part) => {
+      if (part.startsWith("```")) return part;
+      for (const { pattern, display } of mathPatterns) {
+        part = part.replace(pattern, (_, tex) => {
+          formulas.push(katex.renderToString(tex, { displayMode: display, throwOnError: false }));
+          return `AUXMATH${formulas.length - 1}X`;
+        });
+      }
+      return part;
+    }).join("");
+  }
+
+  async function renderDiagrams(root) {
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: darkMode.matches ? "dark" : "neutral",
+      fontFamily: "-apple-system, system-ui, sans-serif",
+      // Natural size: stretched to the pane, a three-node circuit grows boxes a hand wide.
+      flowchart: { useMaxWidth: false },
+      // A step below the 15 px body text, so diagrams read as figures rather than headlines.
+      themeVariables: { fontSize: "13px" },
+    });
+    let index = 0;
+    for (const block of root.querySelectorAll("pre > code.language-mermaid")) {
+      const source = block.textContent;
+      // A diagram that does not parse stays visible as its source rather than as Mermaid's error graphic.
+      if (!(await mermaid.parse(source, { suppressErrors: true }))) continue;
+      let svg;
+      try {
+        ({ svg } = await mermaid.render(`diagram-${generation}-${index++}`, source));
+      } catch (error) {
+        console.error("Mermaid could not draw a diagram", error);
+        continue;
+      }
+      const figure = document.createElement("div");
+      figure.className = "diagram";
+      figure.innerHTML = svg;
+      block.parentElement.replaceWith(figure);
+    }
+  }
+
+  async function render(text) {
+    latestText = text;
+    const current = ++generation;
+    const formulas = [];
+    const html = DOMPurify.sanitize(marked.parse(extractMath(text, formulas), { gfm: true, breaks: true }));
+    const staging = document.createElement("div");
+    staging.innerHTML = html.replace(/AUXMATH(\d+)X/g, (_, index) => formulas[Number(index)]);
+    await renderDiagrams(staging);
+
+    // A newer transcript may have arrived while the diagrams were drawing.
+    if (current !== generation) return;
+    document.getElementById("page").replaceChildren(...staging.childNodes);
+  }
+
+  darkMode.addEventListener("change", () => render(latestText));
+</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:auxilius}",
+            "name": "Debug Auxilius",
+            "target": "Auxilius",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug Auxilius"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:auxilius}",
+            "name": "Release Auxilius",
+            "target": "Auxilius",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release Auxilius"
+        }
+    ]
+}

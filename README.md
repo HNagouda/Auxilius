@@ -1,87 +1,98 @@
-# Auxilius
+<p align="center">
+  <img src="docs/icon.png" width="128" alt="Auxilius icon">
+</p>
 
-Auxilius is a small Mac app that watches the paper you write on through the Desk View camera, turns your handwriting into Markdown (maths in LaTeX, circuits as clean schematics), and lets a chat assistant look at the page whenever you mention your working. The name is *oculus* (eye) plus *auxilium* (help).
+<h1 align="center">Auxilius</h1>
 
-It exists because working an exercise on paper and then retyping every symbol into a chat is slow, and the chat never sees the working unless you type that too.
+<p align="center">
+  <b>Work on paper. Your AI chat follows along.</b><br>
+  A small Mac app that reads your handwriting through the Desk View camera, as you write.
+</p>
 
-## How it works
+<p align="center">
+  <a href="https://github.com/HNagouda/Auxilius/actions/workflows/build.yml"><img src="https://github.com/HNagouda/Auxilius/actions/workflows/build.yml/badge.svg" alt="Build"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B-black" alt="macOS 14 or later">
+  <img src="https://img.shields.io/badge/Apple%20silicon-only-black" alt="Apple silicon only">
+  <img src="https://img.shields.io/badge/MCP-Claude%20%7C%20ChatGPT%20Codex-black" alt="MCP for Claude and ChatGPT Codex">
+</p>
 
-The camera feed goes through four steps, all on the Mac:
+You ask a chat for help with a circuits exercise, work it out on paper, and then spend ten minutes typing time constants, exponents and a resistor network back into the chat box. And the chat still never sees your working, only the answer you typed.
 
-1. Vision's document segmentation finds the sheet in the frame, and Core Image warps it so the page is flat and square-on. The outline only moves when the page really moves, so the preview does not shimmer.
-2. Five times a second the page is shrunk to a 360x480 grayscale thumbnail and compared with the previous one. A hand or pen in motion marks you as writing.
-3. Once nothing has moved for 1.2 s, a running average of the still page is compared with the last page that was read. If there is new ink (about half a handwritten character is enough), that moment becomes the new page.
-4. The new page is saved for chat, and the model you picked in Settings (Claude Opus 5.5 by default) reads it into Markdown. The transcript pane renders it with marked, KaTeX and Mermaid, and DOMPurify strips anything that is not plain formatting.
+Auxilius fixes that. Put your page under the Mac's Desk View camera and just write. Every time you pause, it reads the page and turns it into clean text: maths as LaTeX, circuits as real schematics, and diagrams like resource allocation graphs redrawn. Your chat can look at the page whenever you mention it, so "check my working on part b" just works.
 
-Circuits get their own path, because Mermaid can only show which boxes connect, not what a circuit looks like. The model writes each circuit once, as a `circuit` block of JSON: every part runs between two points on a coarse grid traced from the sketch, so the drawing keeps the shape you drew. From that one block, `schematic.js` draws a schematic with real symbols, with the crop of your original sketch under it, and `Circuit.swift` turns it into a SPICE netlist. You read the schematic; the chat gets the netlist, which it reasons over far better than over any picture. Mermaid is still used for flowcharts and trees. Pages that arrive while a read is in flight collapse into the newest one, so there is never more than one request at a time.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/transcript-dark.png">
+    <img src="docs/transcript-light.png" width="560" alt="A transcribed page: an RC circuit redrawn as a schematic, with the working below it in typeset maths">
+  </picture>
+</p>
 
-Chat clients reach the page through a Model Context Protocol (MCP) server built into the same binary. Run with `--mcp`, it serves one tool, `read_paper`, which returns the latest page photo and its transcription. The app writes both to `~/Library/Application Support/Auxilius/` (`page.jpg` and `page.json`), and the MCP server only reads them.
+## What it does
 
-## Layout
+- **Follows along as you write.** It notices when your hand stops moving and there's new ink, and reads the page only then. No button to press, and no request while you're mid-stroke.
+- **Maths comes out as LaTeX**, typeset in the app and ready to paste into any chat.
+- **Circuits become schematics** with real symbols, traced from the layout you drew. The chat gets the same circuit as a SPICE netlist, which it reasons over far better than over a picture.
+- **Other diagrams are redrawn too:** flowcharts, trees, state machines, resource allocation graphs.
+- **Your original sketch stays one click away** under every diagram, so you can check the redraw against what you actually drew.
+- **Chats can see your page** through a built-in MCP server (Model Context Protocol, the standard way chat apps connect to local tools). It works with Claude Desktop, Claude Code and the Codex mode of the ChatGPT desktop app. Anywhere else, Copy puts the whole transcript on your clipboard.
 
-```
-Package.swift              Swift package, macOS 14+, no dependencies
-Info.plist                 Bundle info and the camera permission text
-Resources/
-  transcript.html          Renders the transcript: Markdown, LaTeX, circuits, then Mermaid
-  schematic.js             Draws a circuit block as an SVG schematic
-  vendor/                  KaTeX 0.19.0, marked 18.0.14, DOMPurify 3.4.16, Mermaid 12.1.0,
-                           bundled so rendering works offline
-  AppIcon.icns             Generated by scripts/make-icon.swift
-Sources/Auxilius/
-  main.swift               Starts the app, or the MCP server with --mcp
-  Camera.swift             Capture session, Desk View cameras first
-  Page.swift               Finds the page and flattens it
-  ChangeDetector.swift     Decides when there is new writing to read
-  FrameProcessor.swift     Runs the steps above on every frame
-  Transcriber.swift        The transcription request and its prompt
-  Circuit.swift            The circuit block format, and the netlist chats get instead of it
-  ClaudeModel.swift        Lists the account's models for the Settings picker
-  AnthropicAPI.swift       Headers and error handling shared by both API calls
-  Feed.swift               The files the MCP server reads
-  MCPServer.swift          JSON-RPC over stdio, the read_paper tool
-  Session.swift            App state, glue between camera, transcriber and feed
-  ChatConnections.swift    Registers the MCP server with Claude Desktop and Claude Code
-  Keychain.swift           Stores the Anthropic API key
-  *View.swift              The window and Settings
-scripts/
-  build.sh                 Builds build/Auxilius.app; --install copies it to /Applications,
-                           --dmg packs build/Auxilius.dmg
-  make-icon.swift          Draws the icon
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/graph-dark.png">
+    <img src="docs/graph-light.png" width="420" alt="A hand-drawn resource allocation graph redrawn as a diagram">
+  </picture>
+</p>
 
-## Using it
+## Install
 
-1. Build and install. Only the Command Line Tools are needed, not Xcode. Either install straight away, or build a disk image and drag the app onto Applications from it.
+1. Download `Auxilius.dmg` from the [latest release](https://github.com/HNagouda/Auxilius/releases/latest) and drag Auxilius onto Applications.
+2. The app isn't signed with an Apple Developer ID yet, so macOS blocks it the first time. Clear the block once in Terminal:
    ```
-   ./scripts/build.sh --install
-   ./scripts/build.sh --dmg
+   xattr -dr com.apple.quarantine /Applications/Auxilius.app
    ```
-2. Open Auxilius and allow camera access. It picks a Desk View camera first: the MacBook's own, or your iPhone's through Continuity Camera. The camera button in the toolbar switches between them.
-3. In Settings (⌘,), paste an Anthropic API key to get live transcription. It is stored in the login keychain. Once the key is saved, the Model picker lists every model on your account that can read images. Without a key the app still captures pages, and a connected chat reads the photo directly.
-4. Connect a chat in Settings:
-   - Claude Desktop: press Connect, then quit and reopen Claude Desktop. This adds an `auxilius` entry to `~/Library/Application Support/Claude/claude_desktop_config.json` and keeps a copy of the old file next to it as `.auxilius-backup`.
-   - Claude Code: copy the command, which is `claude mcp add --scope user auxilius -- '/Applications/Auxilius.app/Contents/MacOS/Auxilius' --mcp`.
-   - Any other chat, ChatGPT included: the Copy button under the transcript (or ⇧⌘C) copies it with circuits as netlists, and ⌥⇧⌘C copies the page image.
+3. Open it and allow camera access. It picks a Desk View camera on its own: the MacBook's built-in one, or your iPhone's through Continuity Camera.
 
-Then ask the chat something like "check my working on part b" and it calls `read_paper`.
+It needs a Mac with Apple silicon and macOS 14 or later.
 
-## Changing it
+## Turn on transcription
 
-The thresholds for "writing" and "new ink" are named constants at the top of `ChangeDetector.swift`, each with a comment on what it means. The transcription prompt and effort level are at the top of `Transcriber.swift`. Effort is `low` because reading a page needs little deliberation and every second counts while you wait. It is only sent to models whose Models API entry says they accept it, and `fallbacks: "default"` only to the four models documented to take it (`ClaudeModel.swift`), because either one is a 400 on other models.
+Paste an Anthropic API key in Settings (⌘,). It's stored in your login keychain, and the Model picker lists every model on your account that can read images (Claude Opus 5.5 by default).
 
-SwiftUI's `@State` macro does not ship with the Command Line Tools, so view state lives in `@Observable` classes instead. Keep it that way if you want the project to keep building without Xcode.
+Without a key, Auxilius still captures your page, and a connected chat reads the photo directly.
 
-#! NOTE[signing] : The build is ad-hoc signed, so macOS asks for camera access again after every rebuild
+## Connect your chat
 
-#! NOTE[transcription] : The circuit prompt has only been checked with hand-written sample blocks, not with real model output
-# The schematic renderer, the crops and the netlists were tested on a photo of a real notebook page.
+In Settings, under Chat:
 
-## Local development
+| Chat | How |
+|---|---|
+| Claude Desktop | Press **Connect**, then quit and reopen Claude Desktop |
+| ChatGPT desktop app (Codex mode) | Press **Connect**, then restart the ChatGPT app |
+| Claude Code | Press **Copy Command** and run it in a terminal |
+| Anything else, including ChatGPT's normal chat | Press **Copy** under the transcript (⇧⌘C) and paste |
 
-`swift build` checks that everything compiles. The camera, the permission prompt and the keychain only behave properly inside the app bundle, so test through `./scripts/build.sh --install` and open the app. To check the MCP server without a chat client, pipe JSON-RPC into it:
+Then just talk about your paper: "look at my working, where did I go wrong?" The chat calls the `read_paper` tool and gets the photo plus the transcript.
+
+ChatGPT's normal chat mode only connects to remote servers today, which is why the local tool works in its Codex mode and Copy covers the rest.
+
+## Privacy
+
+The camera feed never leaves your Mac. Only a still photo of the page goes out: to the Anthropic API when you've added a key, and to your chat app when it asks for the page. The latest page is kept in `~/Library/Application Support/Auxilius/`. The page history (Settings, History) is off by default; when it's on, it keeps up to 1,000 pages on disk to build a test set.
+
+## Where it's going
+
+The next step is running fully on-device, with no API key and no network. Small open vision models such as Qwen3.5 (4B and 9B) and dedicated OCR models such as PaddleOCR-VL now run on Apple silicon through MLX. Nobody has published how they do on handwritten maths, though, so the plan is to benchmark them on real pages collected by the page history before choosing one.
+
+## Build it yourself
+
+You only need the Command Line Tools, not Xcode:
 
 ```
-printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_paper","arguments":{}}}' \
-  | /Applications/Auxilius.app/Contents/MacOS/Auxilius --mcp
+git clone https://github.com/HNagouda/Auxilius.git
+cd Auxilius
+./scripts/build.sh --install
 ```
+
+`./scripts/build.sh --dmg` builds the disk image instead. How the pipeline works, where each piece lives, and how to change it are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
+The name is Latin: *oculus* (eye) plus *auxilium* (help).

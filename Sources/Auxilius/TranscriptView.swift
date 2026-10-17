@@ -4,6 +4,7 @@ import WebKit
 /// Shows the transcript with its LaTeX typeset by KaTeX, which ships inside the app so it works offline.
 struct TranscriptView: NSViewRepresentable {
     let text: String
+    let pageJPEG: Data?
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -21,18 +22,23 @@ struct TranscriptView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
-        context.coordinator.show(text, in: webView)
+        context.coordinator.show(Content(text: text, pageJPEG: pageJPEG), in: webView)
+    }
+
+    struct Content: Equatable {
+        let text: String
+        let pageJPEG: Data?
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         private var isLoaded = false
-        private var pendingText: String?
-        private var shownText: String?
+        private var pending: Content?
+        private var shown: Content?
 
-        func show(_ text: String, in webView: WKWebView) {
-            guard text != shownText else { return }
+        func show(_ content: Content, in webView: WKWebView) {
+            guard content != shown else { return }
 
-            pendingText = text
+            pending = content
             guard isLoaded else { return }
 
             render(webView)
@@ -44,15 +50,17 @@ struct TranscriptView: NSViewRepresentable {
         }
 
         private func render(_ webView: WKWebView) {
-            guard let text = pendingText,
-                  let json = try? JSONSerialization.data(withJSONObject: [text]),
-                  let argument = String(data: json, encoding: .utf8) else { return }
+            guard let content = pending else { return }
+
+            let image = content.pageJPEG.map { "data:image/jpeg;base64,\($0.base64EncodedString())" } ?? ""
+            guard let json = try? JSONSerialization.data(withJSONObject: [content.text, image]),
+                  let arguments = String(data: json, encoding: .utf8) else { return }
 
             // Passed as JSON so nothing in the transcript can break out of the string.
             // The trailing null stops WebKit from trying to hand back render's promise.
-            webView.evaluateJavaScript("render(...\(argument)); null")
-            shownText = text
-            pendingText = nil
+            webView.evaluateJavaScript("render(...\(arguments)); null")
+            shown = content
+            pending = nil
         }
     }
 }

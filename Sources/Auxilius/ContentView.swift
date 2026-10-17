@@ -57,13 +57,6 @@ struct ContentView: View {
             .help(session.isPaused ? "Resume the camera" : "Pause the camera")
             .disabled(session.cameraState != .running && !session.isPaused)
         }
-        ToolbarItem {
-            Button("Copy Transcript", systemImage: "doc.on.doc") {
-                session.copyTranscript()
-            }
-            .help("Copy the transcript to paste into any chat")
-            .disabled(session.transcript.isEmpty)
-        }
     }
 }
 
@@ -119,7 +112,7 @@ private struct TranscriptPane: View {
     var body: some View {
         VStack(spacing: 0) {
             if !session.transcript.isEmpty {
-                TranscriptView(text: session.transcript)
+                TranscriptView(text: session.transcript, pageJPEG: session.transcribedPageJPEG)
             } else if !session.hasAPIKey {
                 ContentUnavailableView {
                     Label("No Transcription", systemImage: "text.viewfinder")
@@ -128,8 +121,10 @@ private struct TranscriptPane: View {
                 } actions: {
                     SettingsLink { Text("Open Settings") }
                 }
+                .frame(maxHeight: .infinity)
             } else {
                 ContentUnavailableView("Nothing Written Yet", systemImage: "pencil.and.scribble", description: Text("Write on your page. The text appears here once you pause."))
+                    .frame(maxHeight: .infinity)
             }
 
             if let error = session.transcriptionError {
@@ -139,13 +134,29 @@ private struct TranscriptPane: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                     Spacer()
-                    Button("Try Again") { session.transcribeLatestPage() }
+                    Button("Try Again") { session.retryTranscription() }
                         .disabled(session.isTranscribing)
                 }
                 .font(.callout)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
             }
+
+            Divider()
+            HStack {
+                Spacer()
+                Button {
+                    session.copyTranscript()
+                } label: {
+                    Label(session.didJustCopy ? "Copied" : "Copy", systemImage: session.didJustCopy ? "checkmark" : "doc.on.doc")
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .help("Copy the transcript, with circuits as netlists, to paste into any chat (⇧⌘C)")
+                .disabled(session.transcript.isEmpty)
+            }
+            .controlSize(.small)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.background)

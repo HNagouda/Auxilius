@@ -1,6 +1,6 @@
 import Foundation
 
-/// Reads a photo of a handwritten page with Claude and returns it as Markdown with LaTeX and Mermaid.
+/// Reads a photo of a handwritten page with Claude and returns it as Markdown with LaTeX, circuit JSON and Mermaid.
 enum Transcriber {
     // Reading a page needs little deliberation, and every second counts while someone waits.
     private static let effort = "low"
@@ -24,18 +24,34 @@ enum Transcriber {
         in a different ink colour) go in italics next to what they point at, for example \
         *(red, arrow towards the source: 8 V drop)*.
 
-        Diagrams:
-        - Draw circuits, flowcharts, trees, state machines and other node-and-line diagrams as a fenced \
-        ```mermaid block, using `flowchart LR`.
-        - For a circuit, every component is a node labelled with its name and value, for example \
-        S1["2 V source"], R1["R1 2 kΩ"], C1["C1 100 µF"], L1["L1 2 H"]. Every wire is an edge. Put \
-        labelled junctions, node voltages and currents on the edges or as their own small nodes, with \
-        the values written on the page.
-        - Mermaid labels are plain text: no LaTeX inside them, and wrap every label in double quotes.
-        - Under each diagram, add one line in square brackets saying what it shows, for example \
+        Circuits:
+        - Write each circuit diagram as a fenced ```circuit block holding one JSON object. The app draws \
+        it as a schematic for the student and turns it into a netlist for the chat assistant.
+        - Trace the layout of the sketch onto a grid of integer points [x, y], with x to the right and y \
+        downwards, so the drawing keeps the shape the student drew. Use 2 to 4 grid steps per component.
+        - "parts" lists every component and wire. A two-terminal part runs "from" one point "to" another, \
+        in a straight horizontal or vertical line. Types: wire, resistor, capacitor, inductor, battery, \
+        voltage_source, current_source, diode (from anode to cathode), switch. For battery, voltage_source \
+        and current_source, "to" is the + side, or the side the arrow points to. Give "name" (R1, C1, V1) \
+        and "value" ("2 kΩ", "100 µF", "12 V") as written; put anything else written beside a component, \
+        such as an initial voltage, in "note". A ground symbol is {"type": "ground", "at": [x, y]}.
+        - Every corner and junction is a grid point where parts meet, so wires must meet the parts they \
+        connect to at exactly the same point.
+        - "nodes" names labelled points, for example {"at": [4, 0], "text": "A"}. "title" is a few words.
+        - "box" is where the sketch sits in the photo, as [left, top, right, bottom] fractions of the \
+        image width and height, with a little margin.
+        - Example: {"title": "Series RC", "box": [0.1, 0.05, 0.5, 0.25], "parts": [
+          {"type": "battery", "name": "V1", "value": "2 V", "from": [0, 2], "to": [0, 0]},
+          {"type": "resistor", "name": "R1", "value": "2 kΩ", "from": [0, 0], "to": [3, 0]},
+          {"type": "capacitor", "name": "C1", "value": "100 µF", "note": "V_C = 5 V", "from": [3, 0], "to": [3, 2]},
+          {"type": "wire", "from": [3, 2], "to": [0, 2]}]}
+        - Under each circuit, add one line in square brackets saying what it is, for example \
         [Series RC loop: 2 V source, 2 kΩ resistor, 100 µF capacitor with V_C = 5 V].
-        - Graphs, plots and sketches that are not node-and-line diagrams get only the square-bracket \
-        line, with the axes, labelled points and values.
+
+        Other diagrams:
+        - Flowcharts, trees and state machines go in a fenced ```mermaid block using `flowchart LR`. \
+        Mermaid labels are plain text: no LaTeX, and every label in double quotes.
+        - Graphs, plots and sketches get only a square-bracket line with the axes, labelled points and values.
 
         Accuracy:
         - Leave out anything crossed out. Write [illegible] for anything you cannot read.

@@ -18,6 +18,7 @@ enum CameraState: Equatable {
 final class Session {
     private static let selectedCameraKey = "selectedCameraID"
     private static let modelKey = "transcriptionModel"
+    private static let copiedConfirmation = Duration.seconds(1.5)
     private static let logger = Logger(subsystem: "auxilius", category: "session")
 
     private(set) var cameras: [AVCaptureDevice] = []
@@ -27,10 +28,15 @@ final class Session {
     private(set) var page: CGImage?
     private(set) var pageCapturedAt: Date?
     private(set) var isWriting = false
+    // The model's Markdown, circuit blocks included. Chats get `chatTranscript` instead.
     private(set) var transcript = ""
+    // The photo the transcript was read from, which the transcript pane crops sketches out of.
+    private(set) var transcribedPageJPEG: Data?
+    private(set) var didJustCopy = false
     private(set) var isTranscribing = false
     private(set) var transcriptionError: String?
-    private(set) var hasAPIKey = Keychain.apiKey() != nil
+    // Read from the keychain once per launch: an ad-hoc signed rebuild can make every read ask for permission.
+    private(set) var apiKey = Keychain.apiKey()
     private(set) var model = Session.savedModel()
 
     private var camera: Camera!
@@ -52,6 +58,8 @@ final class Session {
     }
 
     var isPaused: Bool { cameraState == .paused }
+
+    var hasAPIKey: Bool { apiKey != nil }
 
     var isTranscriptCurrent: Bool { pageNumber > 0 && transcribedPageNumber == pageNumber }
 
@@ -152,7 +160,7 @@ final class Session {
     private func writeRecord() {
         guard let pageCapturedAt else { return }
 
-        let record = PageRecord(capturedAt: pageCapturedAt, transcript: transcript, transcriptIsCurrent: transcribedPageNumber == pageNumber)
+        let record = PageRecord(capturedAt: pageCapturedAt, transcript: chatTranscript, transcriptIsCurrent: transcribedPageNumber == pageNumber)
         do {
             try Feed.write(record)
         } catch {
@@ -165,16 +173,17 @@ final class Session {
     // * ====================================================================
 
     /// Reads pages one at a time; pages that arrive meanwhile collapse into the newest one.
+    /// After a failure it waits for Try Again or a new key, rather than failing again on every page.
     func transcribeLatestPage() {
-        guard !isTranscribing, let apiKey = Keychain.apiKey() else { return }
+        guard !isTranscribing, transcriptionError == nil, let apiKey else { return }
 
         isTranscribing = true
-        transcriptionError = nil
         Task {
             while transcribedPageNumber < pageNumber, let jpeg = pageJPEG {
                 let number = pageNumber
                 do {
                     transcript = try await Transcriber.transcribe(jpeg: jpeg, previous: transcript, model: model, apiKey: apiKey)
+                    transcribedPageJPEG = jpeg
                     transcribedPageNumber = number
                     writeRecord()
                 } catch {
@@ -189,7 +198,13 @@ final class Session {
 
     func saveAPIKey(_ key: String) throws {
         try Keychain.save(apiKey: key)
-        hasAPIKey = true
+        apiKey = key
+        transcriptionError = nil
+        transcribeLatestPage()
+    }
+
+    func retryTranscription() {
+        transcriptionError = nil
         transcribeLatestPage()
     }
 
@@ -214,16 +229,26 @@ final class Session {
 
     func removeAPIKey() throws {
         try Keychain.deleteAPIKey()
-        hasAPIKey = false
+        apiKey = nil
     }
 
     // * ====================================================================
     // * === pasteboard
     // * ====================================================================
 
+    var chatTranscript: String {
+        Netlist.chatVersion(of: transcript)
+    }
+
     func copyTranscript() {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(transcript, forType: .string)
+        NSPasteboard.general.setString(chatTranscript, forType: .string)
+
+        didJustCopy = true
+        Task {
+            try? await Task.sleep(for: Self.copiedConfirmation)
+            didJustCopy = false
+        }
     }
 
     func copyPageImage() {

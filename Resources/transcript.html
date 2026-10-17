@@ -7,6 +7,7 @@
 <script src="vendor/marked/marked.umd.js"></script>
 <script src="vendor/dompurify/purify.min.js"></script>
 <script src="vendor/mermaid/mermaid.min.js"></script>
+<script src="schematic.js"></script>
 <style>
   :root {
     color-scheme: light dark;
@@ -44,6 +45,16 @@
   .katex-display + br { display: none; }
   .diagram { display: flex; justify-content: center; overflow-x: auto; }
   .diagram svg { max-width: 100%; height: auto; }
+  .circuit { margin: 0 0 1em; }
+  .schematic { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+  .schematic line, .schematic path, .schematic circle { stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .schematic .filled { fill: currentColor; }
+  .schematic text { fill: currentColor; stroke: none; font: 12px -apple-system, system-ui, sans-serif; }
+  .schematic .part-label { fill: -apple-system-secondary-label; }
+  .schematic .node-label { font-weight: 600; }
+  details { margin-top: 0.4em; }
+  summary { font-size: 13px; color: -apple-system-secondary-label; cursor: default; }
+  details img { display: block; max-width: 100%; max-height: 260px; margin-top: 0.6em; border-radius: 6px; }
   ::selection { background: -apple-system-selected-text-background; }
 </style>
 </head>
@@ -60,6 +71,7 @@
   ];
   const darkMode = window.matchMedia("(prefers-color-scheme: dark)");
   let latestText = "";
+  let latestImage = null;
   let generation = 0;
 
   function extractMath(text, formulas) {
@@ -106,13 +118,72 @@
     }
   }
 
-  async function render(text) {
+  // Replaces each ```circuit block with its schematic, and the matching crop of the photo underneath.
+  async function renderCircuits(root, pageImage) {
+    for (const block of root.querySelectorAll("pre > code.language-circuit")) {
+      let circuit, schematic;
+      try {
+        circuit = JSON.parse(block.textContent);
+        schematic = renderCircuit(circuit);
+      } catch (error) {
+        console.error("Could not draw a circuit", error);
+        continue;
+      }
+      const figure = document.createElement("div");
+      figure.className = "circuit";
+      figure.appendChild(schematic);
+      const crop = pageImage && Array.isArray(circuit.box) ? await cropped(pageImage, circuit.box) : null;
+      if (crop) {
+        const details = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = "Original sketch";
+        const image = document.createElement("img");
+        image.src = crop;
+        image.alt = "The sketch as drawn on the page";
+        details.append(summary, image);
+        figure.appendChild(details);
+      }
+      block.parentElement.replaceWith(figure);
+    }
+  }
+
+  // The model's box is approximate, so the crop gets a margin on every side.
+  const CROP_MARGIN = 0.03;
+
+  async function cropped(image, [left, top, right, bottom]) {
+    const clamp = (value) => Math.min(1, Math.max(0, value));
+    const x = clamp(left - CROP_MARGIN) * image.naturalWidth;
+    const y = clamp(top - CROP_MARGIN) * image.naturalHeight;
+    const width = clamp(right + CROP_MARGIN) * image.naturalWidth - x;
+    const height = clamp(bottom + CROP_MARGIN) * image.naturalHeight - y;
+    if (width < 1 || height < 1) return null;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext("2d").drawImage(image, x, y, width, height, 0, 0, width, height);
+    return canvas.toDataURL("image/jpeg", 0.85);
+  }
+
+  function loadImage(source) {
+    if (!source) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => resolve(null);
+      image.src = source;
+    });
+  }
+
+  async function render(text, pageImageSource) {
     latestText = text;
+    latestImage = pageImageSource;
     const current = ++generation;
     const formulas = [];
     const html = DOMPurify.sanitize(marked.parse(extractMath(text, formulas), { gfm: true, breaks: true }));
     const staging = document.createElement("div");
     staging.innerHTML = html.replace(/AUXMATH(\d+)X/g, (_, index) => formulas[Number(index)]);
+    await renderCircuits(staging, await loadImage(pageImageSource));
     await renderDiagrams(staging);
 
     // A newer transcript may have arrived while the diagrams were drawing.
@@ -120,7 +191,7 @@
     document.getElementById("page").replaceChildren(...staging.childNodes);
   }
 
-  darkMode.addEventListener("change", () => render(latestText));
+  darkMode.addEventListener("change", () => render(latestText, latestImage));
 </script>
 </body>
 </html>

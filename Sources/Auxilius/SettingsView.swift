@@ -111,7 +111,7 @@ struct SettingsView: View {
     }
 
     private func loadModels() async {
-        guard let apiKey = Keychain.apiKey() else {
+        guard let apiKey = session.apiKey else {
             form.models = []
             form.modelsError = nil
             return
